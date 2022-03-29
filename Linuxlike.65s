@@ -1,0 +1,152 @@
+; Wait for input test
+
+; IO area of the simulator has to be set at the address $e000
+; (Option/Simulator/InOut memory area)
+; In/Out Window will only accept input when it has focus (is active)
+
+io_area	= $E000
+io_cls	= io_area + 0	; clear terminal window
+io_putc	= io_area + 1	; put char
+io_putr	= io_area + 2	; put raw char (doesn't interpret CR/LF)
+io_puth	= io_area + 3	; put as hex number
+io_getc	= io_area + 4	; get char
+
+cmd_buffer = $0200	;input buffer $0200-$02ff
+print_l = $f0
+print_h = $f1
+temp_l = $e0
+temp_h = $e1
+
+cmd_argv = $0300	;argv print 64 max
+			;$0300-$033f
+
+	*= $F000
+INIT	
+	LDA #<VERSION_S
+	STA print_l
+	LDA #>VERSION_S
+	STA print_h
+	JSR PRINT
+CMD
+	LDA #'-'
+	JSR ECHO
+	LDA #'>'
+	JSR ECHO
+
+
+
+	LDY #$00
+CMD_LOOP
+	LDA io_getc
+	BEQ CMD_LOOP
+	JSR ECHO
+	STA cmd_buffer,Y
+	INY
+	CMP #$0D
+	BEQ END_INPUT
+	JMP CMD_LOOP
+END_INPUT	
+	LDY #$00
+	LDX #$00
+CLEAR_FIRST_SPACE
+	LDA cmd_buffer,Y
+	CMP #' '
+	BEQ .is_space
+.argv_p
+	PHA
+	TYA
+	STA cmd_argv,X
+	PLA
+.is_char	
+	CMP #$0D
+	BEQ ARGV_END
+	CMP #' '
+	BEQ .add_avgc
+	INY
+	LDA cmd_buffer,Y
+	JMP .is_char
+
+.add_avgc
+	INX
+.is_space	
+	CMP #' '
+	BNE .argv_p
+	LDA #$00
+	STA cmd_buffer,Y
+	INY
+	LDA cmd_buffer,Y
+	JMP .is_space
+
+ARGV_END
+	INX	
+SHELL
+	STX temp_l
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+BULID_RETURN	
+	LDA #>CMD
+	PHA
+	LDA #<CMD-1
+	PHA
+	
+	
+	
+	
+	
+	
+ECHO	;print char
+	STA io_putc
+	RTS
+PRINT 	;print string
+	PHA
+	TYA
+	PHA
+	LDY #$00
+.loop
+	LDA (print_l),Y
+	BEQ PRINT_RETURN
+	STA io_putc
+	INY
+	JMP .loop
+PRINT_RETURN
+	PLA
+	TAY
+	PLA
+	RTS
+	
+LOOP
+	JMP LOOP
+
+VERSION_S
+	.DB "6502 linux like cmd version 1.0",$0A,$0D,0
+
+
+VERSION
+	LDA #<VERSION_S
+	STA print_l
+	LDA #>VERSION_S
+	STA print_h
+	JSR PRINT
+	RTS
+
+CMD_LIST
+	.DW CMD_VERSION
+	
+	
+	
+CMD_VERSION
+	.BYTE "version",0
+	.RS CMD_VERSION+12-*
+	.DW VERSION
+	.DW VERSION_HELP
+	
+	
+VERSION_HELP
