@@ -14,8 +14,17 @@ io_getc	= io_area + 4	; get char
 cmd_buffer = $0200	;input buffer $0200-$02ff
 print_l = $f0
 print_h = $f1
-temp_l = $e0
-temp_h = $e1
+
+string_a_l = $f2 ;string cmp
+string_a_h = $f3
+string_b_l = $f4
+string_b_h = $f5
+
+run_l = $e0
+run_h = $e1
+
+void_p = $e2
+void_p_h = $e3
 
 cmd_argv = $0300	;argv print 64 max
 			;$0300-$033f
@@ -26,13 +35,13 @@ INIT
 	STA print_l
 	LDA #>VERSION_S
 	STA print_h
-	JSR PRINT
+	JSR PRINTLN
+	
 CMD
 	LDA #'-'
 	JSR ECHO
 	LDA #'>'
 	JSR ECHO
-
 
 
 	LDY #$00
@@ -41,11 +50,39 @@ CMD_LOOP
 	BEQ CMD_LOOP
 	JSR ECHO
 	STA cmd_buffer,Y
-	INY
 	CMP #$0D
 	BEQ END_INPUT
+	CMP #$08	;backspace
+	BEQ BACKSPACE
+	INY
+	BEQ BUFFER_OV
+	
 	JMP CMD_LOOP
-END_INPUT	
+BACKSPACE
+	CPY #$01
+	BNE .1
+	JSR PRINTCR
+	JMP CMD
+.1	
+	LDA #$00
+	DEY 
+	STA cmd_buffer,Y
+	JMP CMD_LOOP	
+	
+BUFFER_OV
+	LDA #<BUFFER_OUT_ERROR_S
+	STA print_l
+	LDA #>BUFFER_OUT_ERROR_S
+	STA print_h
+	JSR PRINTLN	
+	JMP CMD
+	
+END_INPUT
+	CPY #$00
+	BNE .1
+	JSR PRINTCR
+	JMP CMD
+.1	
 	LDY #$00
 	LDX #$00
 CLEAR_FIRST_SPACE
@@ -78,33 +115,81 @@ CLEAR_FIRST_SPACE
 	JMP .is_space
 
 ARGV_END
-	INX	
+	INX
+	LDA #$00
+	STA cmd_buffer,Y	
 SHELL
-	STX temp_l
+	LDY #$00
+	LDX #$00
+	LDA cmd_argv;load first argv addr
+	STA string_a_l
+	LDA #>cmd_buffer
+	STA string_a_h
+.next
+	LDA CMD_LIST,Y
+	STA string_b_l
+	INY
+	LDA CMD_LIST,Y
+	STA string_b_h
+	INY
+	LDA #$00
+	CMP string_b_l
+	BNE .cmp
+	CMP string_b_h
+	BNE .cmp
+	JMP NOTFIND
+.cmp	
+	JSR STRCMP
+	CMP #$01
+	BEQ RUN
+	INX
+	JMP .next
 	
-	
-	
-	
-	
-	
-	
-	
-	
+RUN
+	DEY
+	DEY
+	LDA CMD_LIST,Y
+	CLC
+	ADC #12
+	STA void_p
+	INY
+	LDA CMD_LIST,Y
+	ADC #$00
+	STA void_p_h
+	LDY #$00
+	LDA (void_p),Y
+	STA run_l
+	INY
+	LDA (void_p),Y
+	STA run_h
 	
 BULID_RETURN	
 	LDA #>CMD
 	PHA
 	LDA #<CMD-1
 	PHA
+	JSR PRINTCR
+	JMP (run_l)
 	
-	
-	
-	
+NOTFIND	
+	JSR PRINTCR
+	LDA cmd_argv
+	STA print_l
+	LDA #>cmd_buffer
+	STA print_h
+	JSR PRINT
+	LDA #<NOTFIND_S
+	STA print_l
+	LDA #>NOTFIND_S
+	STA print_h
+	JSR PRINTLN	
+	JMP CMD
 	
 	
 ECHO	;print char
 	STA io_putc
 	RTS
+	
 PRINT 	;print string
 	PHA
 	TYA
@@ -122,31 +207,102 @@ PRINT_RETURN
 	PLA
 	RTS
 	
+PRINTLN
+	JSR PRINT
+	LDA #$0a
+	JSR ECHO
+	LDA #$0d
+	JSR ECHO
+	RTS
+
+PRINTCR
+	LDA #$0a
+	JSR ECHO
+	LDA #$0d
+	JSR ECHO
+	RTS
+STRCMP
+	TYA
+	PHA
+	LDY #$00
+.loop
+	LDA (string_a_l),Y
+	CMP (string_b_l),Y
+	BNE  .falsestrcmp
+	CMP #$00
+	BEQ .truestrcmp
+	INY
+	JMP .loop
+.truestrcmp
+	PLA
+	TAY
+	LDA #$01
+	RTS
+.falsestrcmp
+	PLA
+	TAY
+	LDA #$00
+	RTS
+
 LOOP
 	JMP LOOP
-
-VERSION_S
-	.DB "6502 linux like cmd version 1.0",$0A,$0D,0
-
+	
+;application
 
 VERSION
 	LDA #<VERSION_S
 	STA print_l
 	LDA #>VERSION_S
 	STA print_h
-	JSR PRINT
+	JSR PRINTLN
 	RTS
 
+LS_CMD	
+	LDY #00
+.1	LDA CMD_LIST,Y
+	STA print_l
+	INY
+	LDA CMD_LIST,Y
+	STA print_h
+	INY
+	LDA #$00
+	CMP print_l
+	BEQ .return
+	CMP print_h
+	BEQ .return
+	JSR PRINTLN
+	JMP .1
+.return
+	RTS
+
+;application list
 CMD_LIST
 	.DW CMD_VERSION
+	.DW CMD_LS
+	.DW $0000
 	
-	
-	
+;application list item	
+;name 12byte
+;application enter address
+;application help
 CMD_VERSION
 	.BYTE "version",0
 	.RS CMD_VERSION+12-*
 	.DW VERSION
 	.DW VERSION_HELP
-	
-	
 VERSION_HELP
+	.BYTE "basc cmd to test linuxlike",0
+	
+CMD_LS
+	.BYTE "list",0
+	.RS CMD_LS+12-*
+	.DW LS_CMD
+	.DW $0000
+
+;string
+VERSION_S
+	.DB "6502 linux like cmd version 1.0",0
+BUFFER_OUT_ERROR_S
+	.DB "cmd buffer full",0
+NOTFIND_S
+	.DB " not find,use list to show all cmd",0
